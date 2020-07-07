@@ -45,7 +45,7 @@
   cmdline)
 
 (defn run-z-cmd
-  "Run a z command once and parse the base time output."
+  "Run a z command once and parse the bash time output."
   [zcmd fname level]
   (def cmd (make-z-cmdline zcmd fname level))
   (file/write stderr (string "running: " cmd "\n"))
