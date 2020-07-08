@@ -1,15 +1,26 @@
-#include <janet.h>
-#include <lzo/lzo1x.h>
-
 // lzo.c: Janet bindings for the lzo realtime compression library.
 // Copyright (c) 2020 Jason Pepas.
 // Released under the terms of the MIT license.
 // See https://opensource.org/licenses/MIT
 
 // See also:
-// https://janet-lang.org/capi/index.html
 // http://www.oberhumer.com/opensource/lzo/
+// https://janet-lang.org/capi/index.html
+// lzo-2.XX/doc/LZOAPI.TXT
 
+#include <janet.h>
+#include <lzo/lzo1x.h>  // LZO1X is the most commonly used algo.
+
+#if LZO_VERSION < 0x2000
+#warning "janet-lzo was not written for lzo versions prior to 2.00.  Good luck!"
+#endif
+
+#if LZO_VERSION >= 0x20a0
+#warning "Hello there, future hacker!  The janet-lzo module was written against \
+lzo 2.10, but your version is more recent.  Most likely this is fine, but please \
+submit a github issue to have janet-lzo updated for the latest release of lzo. \
+See https://github.com/cellularmitosis/janet-lzo/issues"
+#endif
 
 // gcc-specific branch-prediction optimizations:
 #if defined(__GNUC__) && !defined(likely)
@@ -18,7 +29,60 @@
 #define unlikely(x)     (x)
 #endif
 
+// lzo error codes as panic strings.
+static const char* lzo_emsg_error = "lzo failed with LZO_E_ERROR";
+static const char* lzo_emsg_out_of_memory = "lzo failed with LZO_E_OUT_OF_MEMORY";
+static const char* lzo_emsg_not_compressible = "lzo failed with LZO_E_NOT_COMPRESSIBLE";
+static const char* lzo_emsg_input_overrun = "lzo failed with LZO_E_INPUT_OVERRUN";
+static const char* lzo_emsg_output_overrun = "lzo failed with LZO_E_OUTPUT_OVERRUN";
+static const char* lzo_emsg_lookbehind_overrun = "lzo failed with LZO_E_LOOKBEHIND_OVERRUN";
+static const char* lzo_emsg_eof_not_found = "lzo failed with LZO_E_EOF_NOT_FOUND";
+static const char* lzo_emsg_input_not_consumed = "lzo failed with LZO_E_INPUT_NOT_CONSUMED";
+static const char* lzo_emsg_not_yet_implemented = "lzo failed with LZO_E_NOT_YET_IMPLEMENTED";
+static const char* lzo_emsg_invalid_argument = "lzo failed with LZO_E_INVALID_ARGUMENT";
+static const char* lzo_emsg_invalid_alignment = "lzo failed with LZO_E_INVALID_ALIGNMENT";
+static const char* lzo_emsg_output_not_consumed = "lzo failed with LZO_E_OUTPUT_NOT_CONSUMED";
+static const char* lzo_emsg_internal_error = "lzo failed with LZO_E_INTERNAL_ERROR";
+static const char* lzo_emsg_unknown = "lzo failed with an error code unknown as of lzo-2.10";
 
+static const char* lzo_err_as_string(int err) {
+    switch (err) {
+        case LZO_E_ERROR:
+            return lzo_emsg_error;
+        case LZO_E_OUT_OF_MEMORY:
+            return lzo_emsg_out_of_memory;
+        case LZO_E_NOT_COMPRESSIBLE:
+            return lzo_emsg_not_compressible;
+        case LZO_E_INPUT_OVERRUN:
+            return lzo_emsg_input_overrun;
+        case LZO_E_OUTPUT_OVERRUN:
+            return lzo_emsg_output_overrun;
+        case LZO_E_LOOKBEHIND_OVERRUN:
+            return lzo_emsg_lookbehind_overrun;
+        case LZO_E_EOF_NOT_FOUND:
+            return lzo_emsg_eof_not_found;
+        case LZO_E_INPUT_NOT_CONSUMED:
+            return lzo_emsg_input_not_consumed;
+        case LZO_E_NOT_YET_IMPLEMENTED:
+            return lzo_emsg_not_yet_implemented;
+#if LZO_VERSION >= 0x2050
+        case LZO_E_INVALID_ARGUMENT:
+            return lzo_emsg_invalid_argument;
+#endif
+#if LZO_VERSION >= 0x2070
+        case LZO_E_INVALID_ALIGNMENT:
+            return lzo_emsg_invalid_alignment;
+        case LZO_E_OUTPUT_NOT_CONSUMED:
+            return lzo_emsg_output_not_consumed;
+        case LZO_E_INTERNAL_ERROR:
+            return lzo_emsg_internal_error;
+#endif
+        default:
+            return lzo_emsg_unknown;
+    }
+}
+
+// janet lzo/compress.
 static Janet cfun_lzo_compress(int32_t argc, Janet *argv) {
     // we expect exactly 1 arg.
     janet_fixarity(argc, 1);
@@ -36,6 +100,7 @@ static Janet cfun_lzo_compress(int32_t argc, Janet *argv) {
     JanetBuffer* jbuff_out = janet_buffer(capacity);
 
     // the working memory required by lzo during compression.
+    // 128KB on 64-bit, 64KB on 32-bit systems.
     lzo_uint32_t wrkmem[LZO1X_1_MEM_COMPRESS];
 
     // compress the buffer.
@@ -45,36 +110,9 @@ static Janet cfun_lzo_compress(int32_t argc, Janet *argv) {
     lzo_uint dest_len = (lzo_uint)(jbuff_out->capacity);
     int err = lzo1x_1_compress(src, src_len, dest, &dest_len, wrkmem);
     if (unlikely( err != LZO_E_OK )) {
-        switch (err) {
-            case LZO_E_ERROR:
-                janet_panicf("lzo failed with LZO_E_ERROR (%d)", err);
-            case LZO_E_OUT_OF_MEMORY:
-                janet_panicf("lzo failed with LZO_E_OUT_OF_MEMORY (%d)", err);
-            case LZO_E_NOT_COMPRESSIBLE:
-                janet_panicf("lzo failed with LZO_E_NOT_COMPRESSIBLE (%d)", err);
-            case LZO_E_INPUT_OVERRUN:
-                janet_panicf("lzo failed with LZO_E_INPUT_OVERRUN (%d)", err);
-            case LZO_E_OUTPUT_OVERRUN:
-                janet_panicf("lzo failed with LZO_E_OUTPUT_OVERRUN (%d)", err);
-            case LZO_E_LOOKBEHIND_OVERRUN:
-                janet_panicf("lzo failed with LZO_E_LOOKBEHIND_OVERRUN (%d)", err);
-            case LZO_E_EOF_NOT_FOUND:
-                janet_panicf("lzo failed with LZO_E_EOF_NOT_FOUND (%d)", err);
-            case LZO_E_INPUT_NOT_CONSUMED:
-                janet_panicf("lzo failed with LZO_E_INPUT_NOT_CONSUMED (%d)", err);
-            case LZO_E_NOT_YET_IMPLEMENTED:
-                janet_panicf("lzo failed with LZO_E_NOT_YET_IMPLEMENTED (%d)", err);
-            case LZO_E_INVALID_ARGUMENT:
-                janet_panicf("lzo failed with LZO_E_INVALID_ARGUMENT (%d)", err);
-            case LZO_E_INVALID_ALIGNMENT:
-                janet_panicf("lzo failed with LZO_E_INVALID_ALIGNMENT (%d)", err);
-            case LZO_E_OUTPUT_NOT_CONSUMED:
-                janet_panicf("lzo failed with LZO_E_OUTPUT_NOT_CONSUMED (%d)", err);
-            case LZO_E_INTERNAL_ERROR:
-                janet_panicf("lzo failed with LZO_E_INTERNAL_ERROR (%d)", err);
-            default:
-                janet_panicf("lzo failed with unknown error code %d", err);
-        }
+        // Note: according to lzo-2.XX/doc/LZOAPI.TXT, lzo1x_1_compress always
+        // returns LZO_E_OK (errors only occur during decompression).
+        janet_panicf(lzo_err_as_string(err));
     } else {
         jbuff_out->count = (int32_t)dest_len;
     }
@@ -88,6 +126,7 @@ static Janet cfun_lzo_compress(int32_t argc, Janet *argv) {
 //
 // }
 
+// make the c functions visible to janet.
 static const JanetReg cfuns[] = {
     {
         "compress", cfun_lzo_compress,
