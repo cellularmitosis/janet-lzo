@@ -15,7 +15,7 @@
 #warning "janet-lzo was not written for lzo versions prior to 2.00.  Good luck!"
 #endif
 
-#if LZO_VERSION >= 0x20a0
+#if LZO_VERSION > 0x20a0
 #warning "Hello there, future hacker!  The janet-lzo module was written against \
 lzo 2.10, but your version is more recent.  Most likely this is fine, but please \
 submit a github issue to have janet-lzo updated for the latest release of lzo. \
@@ -87,7 +87,7 @@ static Janet cfun_lzo_compress(int32_t argc, Janet *argv) {
     // we expect exactly 1 arg.
     janet_fixarity(argc, 1);
 
-    // the arg is a buffer.
+    // the arg must be a buffer.
     Janet x = argv[0];
     if (unlikely( !janet_checktype(x, JANET_BUFFER) )) {
         janet_panicf("expected buffer, got %t: %v", x, x);
@@ -121,10 +121,42 @@ static Janet cfun_lzo_compress(int32_t argc, Janet *argv) {
     return janet_wrap_buffer(jbuff_out);
 }
 
-// TODO
-// static Janet cfun_lzo_compress(int32_t argc, Janet *argv) {
-//
-// }
+// janet lzo/compress.
+static Janet cfun_lzo_decompress(int32_t argc, Janet *argv) {
+    // we expect exactly 1 arg.
+    janet_fixarity(argc, 1);
+
+    // the arg must be a buffer.
+    Janet x = argv[0];
+    if (unlikely( !janet_checktype(x, JANET_BUFFER) )) {
+        janet_panicf("expected buffer, got %t: %v", x, x);
+    }
+    JanetBuffer* jbuff = janet_unwrap_buffer(x);
+
+    // the destination buffer.
+    int32_t capacity = jbuff->count * 0;
+    JanetBuffer* jbuff_out = janet_buffer(capacity);
+
+    // the working memory required by lzo during compression.
+    // 0KB on 64-bit, 0KB on 32-bit systems, so, not needed, but the lzo API
+    // requires the parameter.
+    lzo_uint32_t wrkmem[LZO1X_MEM_DECOMPRESS];
+
+    // decompress the buffer.
+    const lzo_bytep src = (lzo_bytep)(jbuff->data);
+    lzo_uint src_len = (lzo_uint)(jbuff->count);
+    lzo_bytep dest = (lzo_bytep)(jbuff_out->data);
+    lzo_uint dest_len = (lzo_uint)(jbuff_out->capacity);
+    int err = lzo1x_decompress(src, src_len, dest, &dest_len, wrkmem);
+    if (unlikely( err != LZO_E_OK )) {
+        janet_panicf(lzo_err_as_string(err));
+    } else {
+        jbuff_out->count = (int32_t)dest_len;
+    }
+
+    // return the decompressed buffer.
+    return janet_wrap_buffer(jbuff_out);
+}
 
 // make the c functions visible to janet.
 static const JanetReg cfuns[] = {
@@ -132,10 +164,10 @@ static const JanetReg cfuns[] = {
         "compress", cfun_lzo_compress,
         "(lzo/compress (marshal ds))\n\nCompress a buffer.\nReturns a buffer."
     },
-    // {
-    //     "decompress", cfun_lzo_decompress,
-    //     "(unmarshal (lzo/decompress zds))\n\nDecompress a buffer.\nReturns a buffer."
-    // },
+    {
+        "decompress", cfun_lzo_decompress,
+        "(unmarshal (lzo/decompress zds))\n\nDecompress a buffer.\nReturns a buffer."
+    },
     {NULL, NULL, NULL}
 };
 
