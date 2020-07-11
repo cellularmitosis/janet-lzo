@@ -12,6 +12,8 @@
 #include <stdbool.h>
 #include <lzo/lzo1x.h>  // LZO1X is the most commonly used algo.
 
+#define JANET_LZO_VERSION 0x0003
+
 #if LZO_VERSION < 0x2000
 #warning "janet-lzo was not written for lzo versions prior to 2.00.  Good luck!"
 #endif
@@ -28,12 +30,14 @@ See https://github.com/cellularmitosis/janet-lzo/issues"
 Please file an issue at https://github.com/cellularmitosis/janet-lzo/issues"
 #endif
 
+
 // gcc-specific branch-prediction optimizations:
 #if defined(__GNUC__) && !defined(likely)
 #define unlikely(x)     __builtin_expect(!!(x), 0)
 #else
 #define unlikely(x)     (x)
 #endif
+
 
 // lzo error codes as panic strings.
 static const char* lzo_emsg_error = "lzo failed with LZO_E_ERROR";
@@ -50,8 +54,6 @@ static const char* lzo_emsg_invalid_alignment = "lzo failed with LZO_E_INVALID_A
 static const char* lzo_emsg_output_not_consumed = "lzo failed with LZO_E_OUTPUT_NOT_CONSUMED";
 static const char* lzo_emsg_internal_error = "lzo failed with LZO_E_INTERNAL_ERROR";
 static const char* lzo_emsg_unknown = "lzo failed with an error code unknown as of lzo-2.10";
-
-static bool g_lzo_did_init = false;
 
 static const char* lzo_err_as_string(int err) {
     switch (err) {
@@ -90,6 +92,7 @@ static const char* lzo_err_as_string(int err) {
     }
 }
 
+
 // janet lzo/compress.
 static Janet cfun_lzo_compress(int32_t argc, Janet *argv) {
     // we expect exactly 1 arg.
@@ -101,16 +104,6 @@ static Janet cfun_lzo_compress(int32_t argc, Janet *argv) {
         janet_panicf("expected buffer, got %t: %v", x, x);
     }
     JanetBuffer* jbuff = janet_unwrap_buffer(x);
-
-    // lzo needs to be init'ed, but only once.
-    if (!g_lzo_did_init) {
-        int ret = lzo_init();
-        if (unlikely( ret != LZO_E_OK )) {
-            janet_panicf("lzo_init failed.  Please file an issue at \
-                https://github.com/cellularmitosis/janet-lzo/issues");
-        }
-        g_lzo_did_init = true;
-    }
 
     // the destination buffer.
     // minilzo/testmini.c uses OUT_LEN = (IN_LEN + IN_LEN / 16 + 64 + 3).
@@ -139,6 +132,7 @@ static Janet cfun_lzo_compress(int32_t argc, Janet *argv) {
     return janet_wrap_buffer(jbuff_out);
 }
 
+
 // janet lzo/decompress.
 static Janet cfun_lzo_decompress(int32_t argc, Janet *argv) {
     // we expect exactly 1 arg.
@@ -150,16 +144,6 @@ static Janet cfun_lzo_decompress(int32_t argc, Janet *argv) {
         janet_panicf("expected buffer, got %t: %v", x, x);
     }
     JanetBuffer* jbuff = janet_unwrap_buffer(x);
-
-    // lzo needs to be init'ed, but only once.
-    if (!g_lzo_did_init) {
-        int ret = lzo_init();
-        if (unlikely( ret != LZO_E_OK )) {
-            janet_panicf("lzo_init failed.  Please file an issue at \
-                https://github.com/cellularmitosis/janet-lzo/issues");
-        }
-        g_lzo_did_init = true;
-    }
 
     // the destination buffer.
     // start with an initial output size guess of 2x.
@@ -193,6 +177,7 @@ static Janet cfun_lzo_decompress(int32_t argc, Janet *argv) {
     return janet_wrap_buffer(jbuff_out);
 }
 
+
 // make the c functions visible to janet.
 static const JanetReg cfuns[] = {
     {
@@ -207,5 +192,11 @@ static const JanetReg cfuns[] = {
 };
 
 JANET_MODULE_ENTRY(JanetTable *env) {
+    // note: lzo_init should be thread-safe.
+    if (lzo_init() != LZO_E_OK) {
+        janet_panicf("lzo_init failed.  Please file an issue at \
+            https://github.com/cellularmitosis/janet-lzo/issues");
+    }
+
     janet_cfuns(env, "lzo", cfuns);
 }

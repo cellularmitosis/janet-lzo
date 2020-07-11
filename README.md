@@ -50,3 +50,14 @@ This means it can also be used with `marshal` and `unmarshal`:
 - allow the user to pass a pre-sized destination buffer to `lzo/decompress`,
 to avoid the default _guess-destination-size-and-realloc-as-needed_ loop.
 - make `lzo/compress` tolerate a string as input. (currently must be buffer)
+
+
+## Changelog
+
+- 2020/7/10 fri
+  - `#define JANET_LZO_VERSION 0x0003`
+  - Move `lzo_init()` call into `JANET_MODULE_ENTRY`
+- 2020/7/10 fri (d1cdb80)
+  - initial implementation of `lzo/decompress`
+- 2020/7/7 tue (7d3ac8b)
+  - initial implementation of `lzo/compress`
