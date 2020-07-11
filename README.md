@@ -1,16 +1,20 @@
 # janet-lzo
 
-Janet bindings for the LZO real-time compression library.
+Janet bindings for the [LZO](http://www.oberhumer.com/opensource/lzo/)
+real-time compression library
+(used by the [lzop](https://www.lzop.org/) utility).
 
-# Installation
+
+## Installation
 
 ```
 jpm install https://github.com/cellularmitosis/janet-lzo
 ```
 
-# Usage
 
-`lzo/compress` and `lzo/decompress` operate on buffers:
+## Usage
+
+`lzo/compress` and `lzo/decompress` operate on and return buffers:
 
 ```
 > (import lzo)
@@ -41,3 +45,9 @@ This means it can also be used with `marshal` and `unmarshal`:
 > (unmarshal (lzo/decompress (lzo/compress (marshal {:a 1 :b 2}))))
 {:a 1 :b 2}
 ```
+
+## Future work
+
+- allow the user to pass a pre-sized destination buffer to `lzo/decompress`,
+to avoid the default _guess-destination-size-and-realloc-as-needed_ loop.
+- make `lzo/compress` tolerate a string as input. (currently must be buffer)
