@@ -1,8 +1,7 @@
 # janet-lzo
 
-Janet bindings for the [LZO](http://www.oberhumer.com/opensource/lzo/)
-real-time compression library
-(used by the [lzop](https://www.lzop.org/) utility).
+[Janet](https://janet-lang.org/) bindings for the [LZO](http://www.oberhumer.com/opensource/lzo/)
+real-time compression library (used by the [`lzop`](https://www.lzop.org/) utility).
 
 
 ## Installation
