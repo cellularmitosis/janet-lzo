@@ -9,6 +9,7 @@
 // lzo-2.XX/doc/LZOAPI.TXT
 
 #include <janet.h>
+#include <stdbool.h>
 #include <lzo/lzo1x.h>  // LZO1X is the most commonly used algo.
 
 #if LZO_VERSION < 0x2000
@@ -20,6 +21,11 @@
 lzo 2.10, but your version is more recent.  Most likely this is fine, but please \
 submit a github issue to have janet-lzo updated for the latest release of lzo. \
 See https://github.com/cellularmitosis/janet-lzo/issues"
+#endif
+
+#if LZO1X_MEM_DECOMPRESS != 0
+#error "This binding was written assuming LZO1X_MEM_DECOMPRESS is 0. \
+Please file an issue at https://github.com/cellularmitosis/janet-lzo/issues"
 #endif
 
 // gcc-specific branch-prediction optimizations:
@@ -44,6 +50,8 @@ static const char* lzo_emsg_invalid_alignment = "lzo failed with LZO_E_INVALID_A
 static const char* lzo_emsg_output_not_consumed = "lzo failed with LZO_E_OUTPUT_NOT_CONSUMED";
 static const char* lzo_emsg_internal_error = "lzo failed with LZO_E_INTERNAL_ERROR";
 static const char* lzo_emsg_unknown = "lzo failed with an error code unknown as of lzo-2.10";
+
+static bool g_lzo_did_init = false;
 
 static const char* lzo_err_as_string(int err) {
     switch (err) {
@@ -94,6 +102,16 @@ static Janet cfun_lzo_compress(int32_t argc, Janet *argv) {
     }
     JanetBuffer* jbuff = janet_unwrap_buffer(x);
 
+    // lzo needs to be init'ed, but only once.
+    if (!g_lzo_did_init) {
+        int ret = lzo_init();
+        if (unlikely( ret != LZO_E_OK )) {
+            janet_panicf("lzo_init failed.  Please file an issue at \
+                https://github.com/cellularmitosis/janet-lzo/issues");
+        }
+        g_lzo_did_init = true;
+    }
+
     // the destination buffer.
     // minilzo/testmini.c uses OUT_LEN = (IN_LEN + IN_LEN / 16 + 64 + 3).
     int32_t capacity = jbuff->count + ((jbuff->count) / 16) + 64 + 3;
@@ -121,7 +139,7 @@ static Janet cfun_lzo_compress(int32_t argc, Janet *argv) {
     return janet_wrap_buffer(jbuff_out);
 }
 
-// janet lzo/compress.
+// janet lzo/decompress.
 static Janet cfun_lzo_decompress(int32_t argc, Janet *argv) {
     // we expect exactly 1 arg.
     janet_fixarity(argc, 1);
@@ -133,25 +151,42 @@ static Janet cfun_lzo_decompress(int32_t argc, Janet *argv) {
     }
     JanetBuffer* jbuff = janet_unwrap_buffer(x);
 
+    // lzo needs to be init'ed, but only once.
+    if (!g_lzo_did_init) {
+        int ret = lzo_init();
+        if (unlikely( ret != LZO_E_OK )) {
+            janet_panicf("lzo_init failed.  Please file an issue at \
+                https://github.com/cellularmitosis/janet-lzo/issues");
+        }
+        g_lzo_did_init = true;
+    }
+
     // the destination buffer.
-    int32_t capacity = jbuff->count * 0;
+    // start with an initial output size guess of 2x.
+    int32_t capacity = jbuff->count * 2;
     JanetBuffer* jbuff_out = janet_buffer(capacity);
 
     // the working memory required by lzo during compression.
-    // 0KB on 64-bit, 0KB on 32-bit systems, so, not needed, but the lzo API
-    // requires the parameter.
-    lzo_uint32_t wrkmem[LZO1X_MEM_DECOMPRESS];
+    // LZO1X_MEM_DECOMPRESS is 0, so we can safely pass NULL.
+    void* wrkmem = NULL;
 
     // decompress the buffer.
     const lzo_bytep src = (lzo_bytep)(jbuff->data);
     lzo_uint src_len = (lzo_uint)(jbuff->count);
-    lzo_bytep dest = (lzo_bytep)(jbuff_out->data);
-    lzo_uint dest_len = (lzo_uint)(jbuff_out->capacity);
-    int err = lzo1x_decompress(src, src_len, dest, &dest_len, wrkmem);
-    if (unlikely( err != LZO_E_OK )) {
-        janet_panicf(lzo_err_as_string(err));
-    } else {
-        jbuff_out->count = (int32_t)dest_len;
+    for (;;) {
+        lzo_bytep dest = (lzo_bytep)(jbuff_out->data);
+        lzo_uint dest_len = (lzo_uint)(jbuff_out->capacity);
+        int err = lzo1x_decompress_safe(src, src_len, dest, &dest_len, wrkmem);
+        if (err == LZO_E_OK) {
+            jbuff_out->count = (int32_t)dest_len;
+            break;
+        } else if (err == LZO_E_OUTPUT_OVERRUN) {
+            // double the capacity and try again.
+            janet_buffer_ensure(jbuff_out, jbuff_out->capacity * 2, 1);
+            continue;
+        } else {
+            janet_panicf(lzo_err_as_string(err));
+        }
     }
 
     // return the decompressed buffer.
